@@ -11658,6 +11658,19 @@ async function wkrEmailSend() {
         const completions = await calLoadCompletions(true);
         completions[dateKeyStr + ':' + match.id] = true;
         await calSaveCompletions(completions);
+        await acctUpsertAuditHistoryEntry({
+          brand: String(brandName || '').trim(),
+          auditId: String(match.id || '').trim(),
+          dateKey: String(dateKeyStr || '').trim(),
+          weekKey: opsWeekKeyFromOffset(_asWeekOffset || 0),
+          dayKey: todayKey,
+          specialist: String(match.specialist || '').trim(),
+          notes: String(match.notes || '').trim(),
+          source: 'weekly_report',
+          status: 'completed',
+          completedAt: new Date().toISOString(),
+          recipients: deliveredTo,
+        });
       }
     } catch(e) { /* non-critical */ }
     setTimeout(() => {
@@ -13527,9 +13540,31 @@ async function asToggleComplete(dayKey, auditId, dateKey, event) {
   if (event) event.stopPropagation();
   const completions = await calLoadCompletions(true);
   const ck = dateKey + ':' + auditId;
-  completions[ck] = !completions[ck];
+  const nextDone = !completions[ck];
+  completions[ck] = nextDone;
   try {
     await calSaveCompletions(completions);
+    const schedData = await calLoadAll(true, opsWeekKeyFromOffset(_asWeekOffset || 0));
+    const match = (schedData[dayKey] || []).find(a => a.id === auditId);
+    const brand = String(match?.brand || '').trim();
+    if (brand) {
+      if (nextDone) {
+        await acctUpsertAuditHistoryEntry({
+          brand,
+          auditId: String(auditId || '').trim(),
+          dateKey: String(dateKey || '').trim(),
+          weekKey: opsWeekKeyFromOffset(_asWeekOffset || 0),
+          dayKey: String(dayKey || '').trim(),
+          specialist: String(match?.specialist || '').trim(),
+          notes: String(match?.notes || '').trim(),
+          source: 'schedule_toggle',
+          status: 'completed',
+          completedAt: new Date().toISOString(),
+        });
+      } else {
+        await acctRemoveAuditHistoryEntry(brand, auditId, dateKey);
+      }
+    }
   } catch (e) {
     alert('Could not save completion. Check Supabase table setup.');
     return;
