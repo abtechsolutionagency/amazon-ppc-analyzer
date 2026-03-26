@@ -14578,6 +14578,63 @@ async function acctRenderAuditHistory(brand) {
   }).join('');
 }
 
+async function acctRenderAuditHistory(brand) {
+  const countEl   = document.getElementById('acctAuditCount');
+  const container = document.getElementById('acctAuditHistory');
+  if (!container) return;
+
+  const DAY_LABELS = { '0':'Sunday','1':'Monday','2':'Tuesday','3':'Wednesday','4':'Thursday','5':'Friday','6':'Saturday' };
+
+  const entries = await acctBackfillAuditHistoryForBrand(brand);
+  if (entries.length) {
+    if (countEl) countEl.textContent = `${entries.length} completed`;
+    container.innerHTML = entries.map(entry => {
+      const rawStamp = String(entry.completedAt || entry.dateKey || '').trim();
+      const stamp = rawStamp.includes('T') ? new Date(rawStamp) : new Date(rawStamp + 'T12:00:00');
+      const label = !Number.isNaN(stamp.getTime())
+        ? stamp.toLocaleDateString('en-US', { weekday:'short', month:'short', day:'numeric' })
+        : (entry.dateKey || 'Completed audit');
+      const timeLabel = !Number.isNaN(stamp.getTime())
+        ? stamp.toLocaleTimeString('en-US', { hour:'numeric', minute:'2-digit', hour12:true })
+        : '';
+      const meta = [];
+      if (entry.specialist) meta.push(entry.specialist);
+      if (timeLabel) meta.push(timeLabel);
+      const statusTxt = entry.source === 'weekly_report' ? 'Report sent' : 'Completed';
+      const statusCol = entry.source === 'weekly_report' ? 'var(--accent)' : 'var(--increase)';
+
+      return `<div style="display:flex;align-items:center;justify-content:space-between;background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:11px 14px;transition:border-color 0.15s" onmouseover="this.style.borderColor='rgba(107,143,255,0.3)'" onmouseout="this.style.borderColor='var(--border)'">
+        <div style="display:flex;flex-direction:column;gap:3px">
+          <div style="font-family:'Syne',sans-serif;font-size:12px;font-weight:700;color:var(--text)">${label}</div>
+          <div style="font-family:'DM Mono',monospace;font-size:9px;color:var(--muted)">${meta.join(' · ') || 'Saved audit record'}</div>
+        </div>
+        <div style="font-family:'DM Mono',monospace;font-size:9px;color:${statusCol};letter-spacing:0.5px">${statusTxt}</div>
+      </div>`;
+    }).join('');
+    return;
+  }
+
+  const calData = await calLoadAll(true);
+  const scheduled = [];
+  Object.entries(calData).forEach(([dayKey, items]) => {
+    (items || []).forEach(item => {
+      if (item.brand === brand) scheduled.push({ dayKey, specialist: item.specialist, notes: item.notes });
+    });
+  });
+
+  if (countEl) countEl.textContent = scheduled.length ? `${scheduled.length} scheduled` : '—';
+  if (!scheduled.length) {
+    container.innerHTML = `<div style="font-family:'DM Mono',monospace;font-size:10px;color:var(--muted);text-align:center;padding:20px;opacity:0.5">No audit history yet</div>`;
+    return;
+  }
+
+  container.innerHTML = scheduled.map(entry => `
+    <div style="display:flex;align-items:center;justify-content:space-between;background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:10px 14px">
+      <div style="font-family:'DM Mono',monospace;font-size:10px;color:var(--text)">${DAY_LABELS[entry.dayKey] || entry.dayKey}</div>
+      <div style="font-family:'DM Mono',monospace;font-size:9px;color:var(--muted)">Recurring · ${entry.specialist || '—'}</div>
+    </div>`).join('');
+}
+
 // ── Calendar picker state ─────────────────────────────────────
 let _asCalViewYear  = null;
 let _asCalViewMonth = null;
