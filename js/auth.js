@@ -1,6 +1,6 @@
 (() => {
-  const SUPABASE_URL = 'https://qzfsbqxldyvwxtotppku.supabase.co';
-  const SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_2mgEj8U81hmB8OhDV9jx6w_4BtP275F';
+  const SUPABASE_URL = 'https://temzkjhkqnrtdwxckioy.supabase.co';
+  const SUPABASE_PUBLISHABLE_KEY = 'sb_publishable_kTc_bhsr0iiPmVV34aSdWg_5gfC5hR8';
   const PROFILE_TABLE = 'angora_user_profiles';
   const MIN_PASSWORD_LENGTH = 6;
   const EMAIL_PATTERN = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
