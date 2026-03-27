@@ -14917,33 +14917,72 @@ window.calDeleteAudit = async function() {
   }
 
 
-  async function renderHomeAuditPreview() {
-    const el = document.getElementById('homeAuditPreview');
-    if (!el) return;
-    const data = await calLoadAll(true, opsWeekKeyFromOffset(0));
-    const weekdays = [
-      {key:'1',label:'Mon'},{key:'2',label:'Tue'},{key:'3',label:'Wed'},
-      {key:'4',label:'Thu'},{key:'5',label:'Fri'}
-    ];
-    const todayKey = String(new Date().getDay());
-    el.innerHTML = weekdays.map(function(d) {
-      var key = d.key, label = d.label;
-      var audits = data[key] || [];
-      var isToday = key === todayKey;
-      var items = audits.slice(0,3).map(function(a) {
-        var col = calColor(a.specialist);
-        return '<div style="background:' + col.bg + ';border-radius:5px;padding:3px 5px;margin-bottom:2px;font-family:Syne,sans-serif;font-size:9px;font-weight:700;color:' + col.text + ';white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="' + a.brand + '">' + a.brand + '</div>';
-      }).join('');
-      var more = audits.length > 3 ? '<div style="font-family:DM Mono,monospace;font-size:7px;color:var(--muted);margin-top:2px">+' + (audits.length-3) + ' more</div>' : '';
-      var emptyMsg = '<div style="font-family:DM Mono,monospace;font-size:7px;color:var(--muted);opacity:0.4">—</div>';
-      var bg = isToday ? 'rgba(107,143,255,0.08)' : 'rgba(255,255,255,0.02)';
-      var bdColor = isToday ? 'rgba(107,143,255,0.25)' : 'var(--border)';
-      var dayColor = isToday ? 'var(--accent)' : 'var(--muted)';
-      return '<div style="background:' + bg + ';border:1px solid ' + bdColor + ';border-radius:8px;padding:7px 6px;min-height:60px;cursor:pointer" onclick="switchTool(&apos;auditsched&apos;)">' +
-        '<div style="font-family:DM Mono,monospace;font-size:7px;text-transform:uppercase;letter-spacing:1px;color:' + dayColor + ';margin-bottom:5px">' + label + '</div>' +
-        (items || emptyMsg) + more + '</div>';
+  async function acctRenderAuditHistory(brand) {
+  const countEl = document.getElementById('acctAuditCount');
+  const container = document.getElementById('acctAuditHistory');
+  if (!container) return;
+
+  try {
+    const client = window.angoraSupabase;
+    if (!client) throw new Error('Supabase client not ready.');
+
+    const { data: sessionData, error: sessionError } = await client.auth.getSession();
+    if (sessionError) throw sessionError;
+
+    const user = sessionData?.session?.user;
+    if (!user) throw new Error('No authenticated user.');
+
+    let query = client
+      .from('angora_ops_audits')
+      .select('user_id, audit_id, week_key, day_key, date_key, brand, data, created_at, updated_at')
+      .eq('brand', brand)
+      .order('date_key', { ascending: false, nullsFirst: false })
+      .order('updated_at', { ascending: false });
+
+    const isAdmin = typeof window.angoraUserIsAdmin === 'function' && window.angoraUserIsAdmin(user);
+    if (!isAdmin) {
+      query = query.eq('user_id', user.id);
+    }
+
+    const { data, error } = await query;
+    if (error) throw error;
+
+    if (!data || !data.length) {
+      if (countEl) countEl.textContent = '—';
+      container.innerHTML = `<div style="font-family:'DM Mono',monospace;font-size:10px;color:var(--muted);text-align:center;padding:20px;opacity:0.5">No audit history yet</div>`;
+      return;
+    }
+
+    if (countEl) countEl.textContent = `${data.length} records`;
+
+    container.innerHTML = data.map(row => {
+      const label = row.date_key
+        ? new Date(row.date_key + 'T12:00:00').toLocaleDateString('en-US', { weekday:'short', month:'short', day:'numeric' })
+        : (row.week_key || 'Unknown date');
+
+      const summary =
+        row?.data?.status ||
+        row?.data?.step ||
+        row?.audit_id ||
+        'Audit record';
+
+      return `
+        <div style="display:flex;align-items:center;justify-content:space-between;background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:11px 14px;transition:border-color 0.15s"
+             onmouseover="this.style.borderColor='rgba(107,143,255,0.3)'"
+             onmouseout="this.style.borderColor='var(--border)'">
+          <div style="display:flex;flex-direction:column;gap:3px;min-width:0">
+            <div style="font-family:'Syne',sans-serif;font-size:12px;font-weight:700;color:var(--text)">${label}</div>
+            <div style="font-family:'DM Mono',monospace;font-size:9px;color:var(--muted)">${summary}</div>
+          </div>
+          <div style="font-family:'DM Mono',monospace;font-size:9px;color:var(--muted);letter-spacing:0.5px">${row.audit_id || '—'}</div>
+        </div>`;
     }).join('');
+  } catch (e) {
+    console.error('acctRenderAuditHistory failed:', e);
+    if (countEl) countEl.textContent = '—';
+    container.innerHTML = `<div style="font-family:'DM Mono',monospace;font-size:10px;color:var(--muted);text-align:center;padding:20px;opacity:0.5">Failed to load audit history</div>`;
   }
+}
 
 </script>
 
