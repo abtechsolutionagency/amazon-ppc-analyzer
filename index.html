@@ -3943,7 +3943,7 @@
 
 <header>
   <div class="logo-wrap">
-    <img src="https://temzkjhkqnrtdwxckioy.supabase.co/storage/v1/object/public/pic2/angora_black_logo.png" alt="Angora" class="angora-logo-img">
+    <img src="https://qzfsbqxldyvwxtotppku.supabase.co/storage/v1/object/public/pic/angora_black_logo.png" alt="Angora" class="angora-logo-img">
     <span class="ppc-pulse-text" id="headerToolName">The Garden</span>
   </div>
   <div style="display:flex;align-items:center;gap:14px">
@@ -5425,8 +5425,8 @@
 // ═══════════════════════════════════════════════════════════════════════════
 if (!window.storage) {
   const ANGORA_STORAGE_TABLE = 'angora_storage';
-  const ANGORA_SUPABASE_URL = 'https://temzkjhkqnrtdwxckioy.supabase.co';
-  const ANGORA_SUPABASE_KEY = 'sb_publishable_kTc_bhsr0iiPmVV34aSdWg_5gfC5hR8';
+  const ANGORA_SUPABASE_URL = 'https://qzfsbqxldyvwxtotppku.supabase.co';
+  const ANGORA_SUPABASE_KEY = 'sb_publishable_2mgEj8U81hmB8OhDV9jx6w_4BtP275F';
 
   let angoraStorageClient = null;
   let angoraStorageWarned = false;
@@ -6053,7 +6053,7 @@ function exportCalcReport(silentMode = false) {
   const fp  = v => (v != null) ? v.toFixed(1) + '%' : '—';
   const now = new Date();
   const dateStr = now.toLocaleDateString('en-US', { year:'numeric', month:'long', day:'numeric' });
-  const LOGO = 'https://temzkjhkqnrtdwxckioy.supabase.co/storage/v1/object/public/pic2/angora_black_logo.png';
+  const LOGO = 'https://qzfsbqxldyvwxtotppku.supabase.co/storage/v1/object/public/pic/angora_black_logo.png';
 
   const html = `<!DOCTYPE html>
 <html>
@@ -8322,7 +8322,7 @@ function exportWeeklyReport(silentMode = false) {
   <!-- Footer -->
   <div style="border-top:1px solid #e2e8f0;padding-top:20px;display:flex;justify-content:space-between;align-items:center">
     <div style="display:flex;align-items:center;gap:14px">
-      <img src="https://temzkjhkqnrtdwxckioy.supabase.co/storage/v1/object/public/pic2/angora_black_logo.png" style="height:24px;width:auto;object-fit:contain;filter:brightness(0)" alt="Angora">
+      <img src="https://qzfsbqxldyvwxtotppku.supabase.co/storage/v1/object/public/pic/angora_black_logo.png" style="height:24px;width:auto;object-fit:contain;filter:brightness(0)" alt="Angora">
       <div style="font-size:9px;color:#94a3b8;letter-spacing:0.5px">Confidential · Angora Account Report · ${dateLabel}</div>
     </div>
     <div style="font-size:9px;color:#94a3b8">Generated ${today}</div>
@@ -14506,70 +14506,76 @@ function acctEditProduct(brand, key) {
 
 
 async function acctRenderAuditHistory(brand) {
-  const countEl = document.getElementById('acctAuditCount');
-  const container = document.getElementById('acctAuditHistory');
+  const countEl   = document.getElementById('acctAuditCount');
   if (!container) return;
 
-  try {
-    const client = window.angoraSupabase;
-    if (!client) throw new Error('Supabase client not ready.');
+  const DAY_LABELS = { '0':'Sunday','1':'Monday','2':'Tuesday','3':'Wednesday','4':'Thursday','5':'Friday','6':'Saturday' };
 
-    const { data: sessionData, error: sessionError } = await client.auth.getSession();
-    if (sessionError) throw sessionError;
+  // Get all audit schedule entries for this brand
+  const calData = await calLoadAll(true);
+  const brandEntries = {}; // auditId -> { dayKey, specialist, notes }
+  Object.entries(calData).forEach(([dayKey, items]) => {
+    (items || []).forEach(item => {
+      if (item.brand === brand) brandEntries[item.id] = { dayKey, specialist: item.specialist, notes: item.notes };
+    });
+  });
 
-    const user = sessionData?.session?.user;
-    if (!user) throw new Error('No authenticated user.');
+  // Get completions — format: { "YYYY-MM-DD:auditId": true|false }
+  const completions = await calLoadCompletions(true);
 
-    let query = client
-      .from('angora_ops_audits')
-      .select('user_id, audit_id, week_key, day_key, date_key, brand, data, created_at, updated_at')
-      .eq('brand', brand)
-      .order('date_key', { ascending: false, nullsFirst: false })
-      .order('updated_at', { ascending: false });
+  // Build a map of dateStr -> { auditId, done, dayKey, specialist }
+  const byDate = {};
+  Object.entries(completions).forEach(([ck, done]) => {
+    const sep = ck.lastIndexOf(':');
+    if (sep === -1) return;
+    const dateStr = ck.slice(0, sep);
+    const auditId = ck.slice(sep + 1);
+    const entry   = brandEntries[auditId];
+    if (!entry) return; // not this brand
+    if (!byDate[dateStr]) byDate[dateStr] = [];
+    byDate[dateStr].push({ auditId, done, ...entry });
+  });
 
-    const isAdmin = typeof window.angoraUserIsAdmin === 'function' && window.angoraUserIsAdmin(user);
-    if (!isAdmin) {
-      query = query.eq('user_id', user.id);
-    }
+  // Sort dates newest first
+  const sortedDates = Object.keys(byDate).sort((a, b) => b.localeCompare(a));
+  const totalEntries  = sortedDates.reduce((s, d) => s + byDate[d].length, 0);
+  const doneEntries   = sortedDates.reduce((s, d) => s + byDate[d].filter(e => e.done).length, 0);
 
-    const { data, error } = await query;
-    if (error) throw error;
-
-    if (!data || !data.length) {
-      if (countEl) countEl.textContent = '—';
+  if (!sortedDates.length) {
+    const scheduled = Object.values(brandEntries);
+    countEl.textContent = scheduled.length ? `${scheduled.length} scheduled` : '—';
+    if (!scheduled.length) {
       container.innerHTML = `<div style="font-family:'DM Mono',monospace;font-size:10px;color:var(--muted);text-align:center;padding:20px;opacity:0.5">No audit history yet</div>`;
-      return;
+    } else {
+      container.innerHTML = scheduled.map(e => `
+        <div style="display:flex;align-items:center;justify-content:space-between;background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:10px 14px">
+          <div style="font-family:'DM Mono',monospace;font-size:10px;color:var(--text)">${DAY_LABELS[e.dayKey] || e.dayKey}</div>
+          <div style="font-family:'DM Mono',monospace;font-size:9px;color:var(--muted)">Recurring · ${e.specialist || '—'}</div>
+        </div>`).join('');
     }
-
-    if (countEl) countEl.textContent = `${data.length} records`;
-
-    container.innerHTML = data.map(row => {
-      const label = row.date_key
-        ? new Date(row.date_key + 'T12:00:00').toLocaleDateString('en-US', { weekday:'short', month:'short', day:'numeric' })
-        : (row.week_key || 'Unknown date');
-
-      const summary =
-        row?.data?.status ||
-        row?.data?.step ||
-        row?.audit_id ||
-        'Audit record';
-
-      return `
-        <div style="display:flex;align-items:center;justify-content:space-between;background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:11px 14px;transition:border-color 0.15s"
-             onmouseover="this.style.borderColor='rgba(107,143,255,0.3)'"
-             onmouseout="this.style.borderColor='var(--border)'">
-          <div style="display:flex;flex-direction:column;gap:3px;min-width:0">
-            <div style="font-family:'Syne',sans-serif;font-size:12px;font-weight:700;color:var(--text)">${label}</div>
-            <div style="font-family:'DM Mono',monospace;font-size:9px;color:var(--muted)">${summary}</div>
-          </div>
-          <div style="font-family:'DM Mono',monospace;font-size:9px;color:var(--muted);letter-spacing:0.5px">${row.audit_id || '—'}</div>
-        </div>`;
-    }).join('');
-  } catch (e) {
-    console.error('acctRenderAuditHistory failed:', e);
-    if (countEl) countEl.textContent = '—';
-    container.innerHTML = `<div style="font-family:'DM Mono',monospace;font-size:10px;color:var(--muted);text-align:center;padding:20px;opacity:0.5">Failed to load audit history</div>`;
+    return;
   }
+
+  countEl.textContent = `${doneEntries}/${totalEntries} completed`;
+
+  container.innerHTML = sortedDates.map(dateStr => {
+    const items = byDate[dateStr];
+    const allDone = items.every(i => i.done);
+    const anyDone = items.some(i => i.done);
+    const statusCol = allDone ? 'var(--increase)' : anyDone ? 'var(--decrease)' : 'var(--muted)';
+    const statusTxt = allDone ? '✓ Completed' : anyDone ? '◑ Partial' : '○ Pending';
+    // Format date nicely: "Mon, Feb 3"
+    const d = new Date(dateStr + 'T12:00:00');
+    const label = d.toLocaleDateString('en-US', { weekday:'short', month:'short', day:'numeric' });
+    const specialist = items[0]?.specialist || '—';
+    return `<div style="display:flex;align-items:center;justify-content:space-between;background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:11px 14px;transition:border-color 0.15s" onmouseover="this.style.borderColor='rgba(107,143,255,0.3)'" onmouseout="this.style.borderColor='var(--border)'">
+      <div style="display:flex;flex-direction:column;gap:3px">
+        <div style="font-family:'Syne',sans-serif;font-size:12px;font-weight:700;color:var(--text)">${label}</div>
+        <div style="font-family:'DM Mono',monospace;font-size:9px;color:var(--muted)">${specialist}</div>
+      </div>
+      <div style="font-family:'DM Mono',monospace;font-size:9px;color:${statusCol};letter-spacing:0.5px">${statusTxt}</div>
+    </div>`;
+  }).join('');
 }
 
 // ── Calendar picker state ─────────────────────────────────────
@@ -14917,72 +14923,33 @@ window.calDeleteAudit = async function() {
   }
 
 
-  async function acctRenderAuditHistory(brand) {
-  const countEl = document.getElementById('acctAuditCount');
-  const container = document.getElementById('acctAuditHistory');
-  if (!container) return;
-
-  try {
-    const client = window.angoraSupabase;
-    if (!client) throw new Error('Supabase client not ready.');
-
-    const { data: sessionData, error: sessionError } = await client.auth.getSession();
-    if (sessionError) throw sessionError;
-
-    const user = sessionData?.session?.user;
-    if (!user) throw new Error('No authenticated user.');
-
-    let query = client
-      .from('angora_ops_audits')
-      .select('user_id, audit_id, week_key, day_key, date_key, brand, data, created_at, updated_at')
-      .eq('brand', brand)
-      .order('date_key', { ascending: false, nullsFirst: false })
-      .order('updated_at', { ascending: false });
-
-    const isAdmin = typeof window.angoraUserIsAdmin === 'function' && window.angoraUserIsAdmin(user);
-    if (!isAdmin) {
-      query = query.eq('user_id', user.id);
-    }
-
-    const { data, error } = await query;
-    if (error) throw error;
-
-    if (!data || !data.length) {
-      if (countEl) countEl.textContent = '—';
-      container.innerHTML = `<div style="font-family:'DM Mono',monospace;font-size:10px;color:var(--muted);text-align:center;padding:20px;opacity:0.5">No audit history yet</div>`;
-      return;
-    }
-
-    if (countEl) countEl.textContent = `${data.length} records`;
-
-    container.innerHTML = data.map(row => {
-      const label = row.date_key
-        ? new Date(row.date_key + 'T12:00:00').toLocaleDateString('en-US', { weekday:'short', month:'short', day:'numeric' })
-        : (row.week_key || 'Unknown date');
-
-      const summary =
-        row?.data?.status ||
-        row?.data?.step ||
-        row?.audit_id ||
-        'Audit record';
-
-      return `
-        <div style="display:flex;align-items:center;justify-content:space-between;background:var(--surface2);border:1px solid var(--border);border-radius:10px;padding:11px 14px;transition:border-color 0.15s"
-             onmouseover="this.style.borderColor='rgba(107,143,255,0.3)'"
-             onmouseout="this.style.borderColor='var(--border)'">
-          <div style="display:flex;flex-direction:column;gap:3px;min-width:0">
-            <div style="font-family:'Syne',sans-serif;font-size:12px;font-weight:700;color:var(--text)">${label}</div>
-            <div style="font-family:'DM Mono',monospace;font-size:9px;color:var(--muted)">${summary}</div>
-          </div>
-          <div style="font-family:'DM Mono',monospace;font-size:9px;color:var(--muted);letter-spacing:0.5px">${row.audit_id || '—'}</div>
-        </div>`;
+  async function renderHomeAuditPreview() {
+    const el = document.getElementById('homeAuditPreview');
+    if (!el) return;
+    const data = await calLoadAll(true, opsWeekKeyFromOffset(0));
+    const weekdays = [
+      {key:'1',label:'Mon'},{key:'2',label:'Tue'},{key:'3',label:'Wed'},
+      {key:'4',label:'Thu'},{key:'5',label:'Fri'}
+    ];
+    const todayKey = String(new Date().getDay());
+    el.innerHTML = weekdays.map(function(d) {
+      var key = d.key, label = d.label;
+      var audits = data[key] || [];
+      var isToday = key === todayKey;
+      var items = audits.slice(0,3).map(function(a) {
+        var col = calColor(a.specialist);
+        return '<div style="background:' + col.bg + ';border-radius:5px;padding:3px 5px;margin-bottom:2px;font-family:Syne,sans-serif;font-size:9px;font-weight:700;color:' + col.text + ';white-space:nowrap;overflow:hidden;text-overflow:ellipsis" title="' + a.brand + '">' + a.brand + '</div>';
+      }).join('');
+      var more = audits.length > 3 ? '<div style="font-family:DM Mono,monospace;font-size:7px;color:var(--muted);margin-top:2px">+' + (audits.length-3) + ' more</div>' : '';
+      var emptyMsg = '<div style="font-family:DM Mono,monospace;font-size:7px;color:var(--muted);opacity:0.4">—</div>';
+      var bg = isToday ? 'rgba(107,143,255,0.08)' : 'rgba(255,255,255,0.02)';
+      var bdColor = isToday ? 'rgba(107,143,255,0.25)' : 'var(--border)';
+      var dayColor = isToday ? 'var(--accent)' : 'var(--muted)';
+      return '<div style="background:' + bg + ';border:1px solid ' + bdColor + ';border-radius:8px;padding:7px 6px;min-height:60px;cursor:pointer" onclick="switchTool(&apos;auditsched&apos;)">' +
+        '<div style="font-family:DM Mono,monospace;font-size:7px;text-transform:uppercase;letter-spacing:1px;color:' + dayColor + ';margin-bottom:5px">' + label + '</div>' +
+        (items || emptyMsg) + more + '</div>';
     }).join('');
-  } catch (e) {
-    console.error('acctRenderAuditHistory failed:', e);
-    if (countEl) countEl.textContent = '—';
-    container.innerHTML = `<div style="font-family:'DM Mono',monospace;font-size:10px;color:var(--muted);text-align:center;padding:20px;opacity:0.5">Failed to load audit history</div>`;
   }
-}
 
 </script>
 
